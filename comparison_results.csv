@@ -1,0 +1,4 @@
+from_response,from_questions,to_best_match_tfidf,to_title_tfidf,tfidf_score,combined_score,comment
+Reset your password by clicking the link sent to your email.,How do I reset my password?; Can't log in,You can reset your password by using the email reset link.,Password Reset,0.669382252748191,0.669382252748191,Partial
+Update your billing details from the account settings page.,How to update billing info?; Change payment method,Change your billing details in account settings.,Billing Information,0.6704386037553766,0.6704386037553766,Partial
+Track your order using the tracking number on your orders page.,Where is my order?; Track shipment,Use your order tracking number to find shipping status.,Order Tracking,0.38892172558296123,0.38892172558296123,Misaligned
