@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "text-similarity-comparator"
+version = "0.1.0"
+description = "Generic utility to compare two text datasets using TF-IDF, semantic embeddings, and optional LLM reranking."
+readme = "README.md"
+authors = [{ name = "Your Name" }]
+license = { text = "MIT" }
+requires-python = ">=3.9"
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Topic :: Text Processing :: Linguistic",
+]
+dependencies = [
+  "scikit-learn>=1.7.2",
+  "pandas>=2.0.0",
+  "sentence-transformers>=2.2.2",
+]
+
+[project.optional-dependencies]
+llm = [
+  "openai>=1.30.0",
+]
+dev = [
+  "pytest>=8.0.0",
+  "pytest-cov>=5.0.0",
+]
+
+[project.scripts]
+text-similarity = "text_similarity.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
