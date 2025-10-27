@@ -6,8 +6,11 @@ import logging
 import math
 
 import pandas as pd
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
+
+# Delegate algorithm implementations to dedicated modules
+from .tfidf import compute_tfidf_matrix
+from .semantic import compute_semantic_matrix
+from .llm_reranker import rerank_with_llm
 
 # Avoid importing sentence-transformers at module import to keep optional when unused
 
@@ -96,37 +99,19 @@ class TextSimilarityComparator:
     def compute_tfidf_similarity(self) -> None:
         """Compute cosine similarity using TF-IDF."""
         assert self.from_df is not None and self.to_df is not None
-        vectorizer = TfidfVectorizer(stop_words="english")
-        corpus = (
-            list(self.to_df[self.to_text_column])
-            + list(self.from_df[self.from_text_column])
+        self.tfidf_matrix = compute_tfidf_matrix(
+            from_texts=self.from_df[self.from_text_column].tolist(),
+            to_texts=self.to_df[self.to_text_column].tolist(),
         )
-        X = vectorizer.fit_transform(corpus)
-        G = X[: len(self.to_df)]
-        A = X[len(self.to_df) :]
-        sims = cosine_similarity(A, G)
-        # Store as DataFrame for easier indexing
-        self.tfidf_matrix = pd.DataFrame(sims)
 
     # ------------------------------------------------------------------
     def compute_semantic_similarity(self) -> None:
         """Compute cosine similarity using sentence-transformers embeddings."""
         assert self.from_df is not None and self.to_df is not None
-        # Lazy import to avoid heavy dependency unless needed
-        try:
-            from sentence_transformers import SentenceTransformer, util  # type: ignore
-        except Exception as exc:
-            raise RuntimeError(
-                "sentence-transformers is required for semantic mode. Install it or choose a different mode."
-            ) from exc
-
-        to_texts = self.to_df[self.to_text_column].tolist()
-        from_texts = self.from_df[self.from_text_column].tolist()
-        model = SentenceTransformer("all-MiniLM-L6-v2")
-        to_embeddings = model.encode(to_texts, convert_to_tensor=True)
-        from_embeddings = model.encode(from_texts, convert_to_tensor=True)
-        sims = util.cos_sim(from_embeddings, to_embeddings)
-        self.semantic_matrix = pd.DataFrame(sims.cpu().numpy())
+        self.semantic_matrix = compute_semantic_matrix(
+            from_texts=self.from_df[self.from_text_column].tolist(),
+            to_texts=self.to_df[self.to_text_column].tolist(),
+        )
 
     # ------------------------------------------------------------------
     def compute_llm_similarity(self) -> None:
@@ -138,11 +123,6 @@ class TextSimilarityComparator:
         assert self.from_df is not None and self.to_df is not None
         if self.llm_client is None:
             raise ValueError("llm_client must be provided for LLM mode")
-
-        n_from = len(self.from_df)
-        n_to = len(self.to_df)
-        best_indices: List[int] = []
-        best_scores: List[float] = []
 
         # Ensure we have a prefilter matrix
         pre_matrix = None
@@ -157,32 +137,16 @@ class TextSimilarityComparator:
 
         assert pre_matrix is not None
 
-        for i in range(n_from):
-            pre_scores = pre_matrix.iloc[i].to_numpy()
-            # Choose top-k candidates
-            k = max(1, min(self.llm_top_k, n_to))
-            top_idx = pre_scores.argsort()[::-1][:k]
+        best_indices, best_scores = rerank_with_llm(
+            from_texts=self.from_df[self.from_text_column].tolist(),
+            to_texts=self.to_df[self.to_text_column].tolist(),
+            prefilter_matrix=pre_matrix,
+            scorer=self.llm_client,  # type: ignore[arg-type]
+            top_k=self.llm_top_k,
+        )
 
-            src = str(self.from_df[self.from_text_column].iloc[i])
-            best_j = int(top_idx[0])
-            best_score = -math.inf
-            for j in top_idx:
-                tgt = str(self.to_df[self.to_text_column].iloc[int(j)])
-                try:
-                    score = float(self.llm_client.score_similarity(src, tgt))
-                except Exception as exc:
-                    logger.exception("LLM scoring failed on pair (%s, %s): %s", i, j, exc)
-                    score = 0.0
-                if score > best_score:
-                    best_score = score
-                    best_j = int(j)
-
-            # Clamp to [0,1]
-            best_indices.append(best_j)
-            best_scores.append(max(0.0, min(1.0, best_score)))
-
-        self.llm_best_idx = pd.Series(best_indices)
-        self.llm_scores = pd.Series(best_scores)
+        self.llm_best_idx = best_indices
+        self.llm_scores = best_scores
 
     # ------------------------------------------------------------------
     @staticmethod
